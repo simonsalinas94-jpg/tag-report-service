@@ -25,3 +25,5 @@ Respuesta JSON:
 - total: monto total
 - total_formateado: "$22.259"
 - filename: nombre sugerido del archivo
+
+flask-cors==4.0.0
