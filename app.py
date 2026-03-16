@@ -5,6 +5,7 @@ import base64
 from collections import defaultdict
 from datetime import datetime
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -14,6 +15,12 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.enums import TA_RIGHT
 
 app = Flask(__name__)
+CORS(app)
+```
+
+6. Abre `requirements.txt` y agrega al final:
+```
+flask-cors==4.0.0
 
 CONCESIONARIA_MAP = {'CN': 'Costanera Norte', 'NOR': 'Autopista Nororiente'}
 
