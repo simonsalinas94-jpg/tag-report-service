@@ -255,6 +255,119 @@ def generar_reporte():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/analizar-propiedad', methods=['POST'])
+def analizar_propiedad():
+    try:
+        import anthropic
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+
+        direccion   = data.get('direccion', '')
+        ciudad      = data.get('ciudad', '')
+        operacion   = data.get('operacion', 'flipping')
+        precio      = data.get('precio', '')
+        superficie  = data.get('superficie', '')
+        dormitorios = data.get('dormitorios', '')
+        antiguedad  = data.get('antiguedad', '')
+        observaciones = data.get('observaciones', '')
+
+        if not direccion:
+            return jsonify({'error': 'La dirección es requerida'}), 400
+
+        precio_ufm2 = ''
+        if precio and superficie:
+            try:
+                precio_ufm2 = f"{float(precio)/float(superficie):.1f} UF/m²"
+            except:
+                pass
+
+        prompt = f"""Eres un experto en inversión inmobiliaria en Chile, especializado en análisis de riesgo para flipping y compra de departamentos en Santiago, Viña del Mar y Concón.
+
+Analiza esta propiedad para BTS Investments:
+
+DATOS DE LA PROPIEDAD:
+- Dirección: {direccion}
+- Ciudad/Zona: {ciudad}
+- Operación objetivo: {operacion}
+- Precio pedido: {precio + ' UF' if precio else 'no especificado'}
+- Superficie: {superficie + ' m²' if superficie else 'no especificada'}
+- Precio UF/m²: {precio_ufm2 or 'no calculable'}
+- Dormitorios: {dormitorios}
+- Antigüedad: {antiguedad}
+- Observaciones del evaluador: {observaciones or 'ninguna'}
+
+Investiga y analiza los siguientes factores usando tu conocimiento del mercado chileno:
+
+1. PRECIO VS MERCADO: ¿El precio UF/m² está sobre, bajo o en línea con el sector? ¿Cuál es el rango típico en esa zona?
+2. STOCK SIN VENDER: ¿Hay señales de sobreoferta en el edificio o zona? ¿Proyectos con muchas unidades disponibles hace tiempo?
+3. ENTORNO Y SEGURIDAD: ¿Cómo es la percepción de seguridad del sector? ¿Hay reportes de delincuencia o problemas sociales?
+4. CONECTIVIDAD Y TRANSPORTE: ¿Acceso a metro, buses, autopistas? ¿Distancia a servicios clave?
+5. PROYECTOS NUEVOS EN LA ZONA: ¿Hay nuevos desarrollos que podrían competir o que indiquen crecimiento del sector?
+6. FACTORES OCULTOS: ¿Qué cosas que no se ven en fotos podrían afectar negativamente la venta? (ruido, obras, industrias cercanas, inundaciones históricas, estigma del sector)
+
+Responde EXACTAMENTE en este formato:
+
+SCORE: [VERDE / AMARILLO / ROJO]
+
+PRECIO VS MERCADO:
+[análisis de 2-3 líneas]
+
+STOCK SIN VENDER:
+[análisis de 2-3 líneas]
+
+ENTORNO Y SEGURIDAD:
+[análisis de 2-3 líneas]
+
+CONECTIVIDAD Y TRANSPORTE:
+[análisis de 2-3 líneas]
+
+PROYECTOS NUEVOS EN LA ZONA:
+[análisis de 2-3 líneas]
+
+FACTORES OCULTOS:
+[análisis de 2-3 líneas]
+
+RECOMENDACIÓN:
+[1 párrafo con recomendación clara: Proceder / Investigar más / Descartar, con justificación]
+
+ALERTAS CLAVE:
+[lista de 3-5 puntos concretos que BTS debe verificar antes de decidir]"""
+
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'API key no configurada'}), 500
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model='claude-sonnet-4-20250514',
+            max_tokens=1500,
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+
+        result_text = message.content[0].text
+        score_match = result_text.upper().find('SCORE:')
+        score = 'AMARILLO'
+        if score_match != -1:
+            snippet = result_text[score_match:score_match+20].upper()
+            if 'VERDE' in snippet:
+                score = 'VERDE'
+            elif 'ROJO' in snippet:
+                score = 'ROJO'
+
+        return jsonify({
+            'success': True,
+            'analysis': result_text,
+            'score': score,
+            'direccion': direccion,
+            'ciudad': ciudad
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
+
