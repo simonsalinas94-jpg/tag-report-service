@@ -17,8 +17,6 @@ from reportlab.lib.enums import TA_RIGHT
 app = Flask(__name__)
 CORS(app)
 
-flask-cors==4.0.0
-
 CONCESIONARIA_MAP = {'CN': 'Costanera Norte', 'NOR': 'Autopista Nororiente'}
 
 # Colors
