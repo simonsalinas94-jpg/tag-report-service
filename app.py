@@ -369,6 +369,39 @@ ALERTAS CLAVE:
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/evento-agente', methods=['POST'])
+def evento_agente():
+    try:
+        import anthropic
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+
+        system = data.get('system', '')
+        messages = data.get('messages', [])
+
+        if not messages:
+            return jsonify({'error': 'No se recibieron mensajes'}), 400
+
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'API key no configurada'}), 500
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model='claude-sonnet-4-20250514',
+            max_tokens=2000,
+            system=system,
+            messages=messages
+        )
+
+        response_text = message.content[0].text
+        return jsonify({'success': True, 'response': response_text})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
