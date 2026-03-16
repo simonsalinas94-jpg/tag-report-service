@@ -390,7 +390,7 @@ def evento_agente():
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model='claude-sonnet-4-20250514',
-            max_tokens=2000,
+            max_tokens=4000,
             system=system,
             messages=messages
         )
