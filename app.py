@@ -436,33 +436,37 @@ def buscar_propiedades():
         if not access_token:
             return jsonify({'error': 'No se pudo obtener token de Mercado Libre'}), 500
 
-        max_clp = int(precio_max_uf * UF_VALUE)
-        min_clp = int(precio_min_uf * UF_VALUE)
-
-        city_params = {
-            'Santiago':    'state=TUxDUFJPVjhiYTJa',
-            'Viña del Mar':'city=TUxDQ1ZJTjNlZGMx',
-            'Concón':      'city=TUxDQ0NPTjFlZGMx',
-            'Valparaíso':  'city=TUxDQ1ZBTDQ0NTQ1'
-        }
-        loc_param = city_params.get(ciudad, 'state=TUxDUFJPVjhiYTJa')
-
-        url = f"https://api.mercadolibre.com/sites/MLC/search?category=MLC1459&price={min_clp}-{max_clp}&{loc_param}&limit=50&sort=date_desc"
-        if dorms > 0:
-            url += f"&BEDROOMS={dorms}-"
-
         headers = {'Authorization': f'Bearer {access_token}', 'User-Agent': 'Mozilla/5.0'}
+
+        # Use text search - more reliable for Chilean real estate
+        dorms_text = f' {dorms} dormitorios' if dorms > 0 else ''
+        query = f'departamento venta{dorms_text} {ciudad}'
+        encoded_query = req.utils.quote(query)
+        url = f'https://api.mercadolibre.com/sites/MLC/search?q={encoded_query}&limit=50&sort=date_desc'
+
         search_resp = req.get(url, headers=headers, timeout=15)
         search_resp.raise_for_status()
         results = search_resp.json().get('results', [])
 
         props = []
         for item in results:
-            price_clp = item.get('price', 0)
-            if not price_clp:
+            price = item.get('price', 0)
+            currency = item.get('currency_id', 'CLP')
+            if not price:
                 continue
 
-            price_uf = price_clp / UF_VALUE
+            # Convert to UF
+            if currency == 'UF':
+                price_uf = price
+            else:
+                price_uf = price / UF_VALUE
+
+            # Filter by price range
+            if precio_max_uf > 0 and price_uf > precio_max_uf:
+                continue
+            if precio_min_uf > 0 and price_uf < precio_min_uf:
+                continue
+
             superficie = 0
             dormitorios = 0
             bathrooms = 0
@@ -503,6 +507,7 @@ def buscar_propiedades():
                 'id': item.get('id', ''),
                 'titulo': item.get('title', ''),
                 'precio': round(price_uf, 1),
+                'moneda': currency,
                 'superficie': superficie,
                 'dormitorios': dormitorios,
                 'bathrooms': bathrooms,
