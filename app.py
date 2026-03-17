@@ -524,6 +524,143 @@ def buscar_propiedades():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/buscar-oportunidades', methods=['POST'])
+def buscar_oportunidades():
+    try:
+        import anthropic
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+
+        ciudad = data.get('ciudad', 'Santiago')
+        precio_max = data.get('precioMax', '5000')
+        precio_min = data.get('precioMin', '1000')
+        dorms = data.get('dorms', '2')
+        sup_min = data.get('supMin', '40')
+        comuna = data.get('comuna', '')
+
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'API key no configurada'}), 500
+
+        location = f'{comuna}, {ciudad}' if comuna else ciudad
+
+        prompt = f"""Eres un experto en inversión inmobiliaria en Chile para BTS Investments, especializado en identificar oportunidades de flipping de departamentos.
+
+Tu tarea es buscar y analizar las 5 mejores oportunidades de departamentos en venta en {location} con estos criterios:
+- Precio: {precio_min} a {precio_max} UF
+- Dormitorios mínimo: {dorms}
+- Superficie mínima: {sup_min} m²
+- Foco: oportunidades de flipping (precio bajo mercado, tiempo publicado, potencial de revalorización)
+
+PASO 1 - BÚSQUEDA:
+Busca en Portal Inmobiliario Chile, Toctoc.com y Mercado Libre inmuebles Chile departamentos que cumplan estos criterios. Identifica las 5 propiedades más interesantes como oportunidades de flipping, priorizando:
+- Precio por m² bajo el promedio de la zona
+- Tiempo prolongado en el mercado (señal de negociación)
+- Ubicaciones con potencial de revalorización
+
+PASO 2 - ANÁLISIS HOLÍSTICO DE CADA PROPIEDAD:
+Para cada una de las 5 propiedades, analiza:
+
+DATOS DUROS:
+- Dirección y comuna exacta
+- Precio en UF y UF/m²
+- Comparación UF/m² vs promedio de la zona
+- Superficie y dormitorios
+- Tiempo estimado en el mercado
+- URL del aviso si está disponible
+
+ANÁLISIS CUALITATIVO:
+- Entorno y seguridad del sector
+- Conectividad y transporte (metro, buses, autopistas)
+- Proyectos nuevos en la zona (competencia o señal de crecimiento)
+- Factores ocultos que podrían afectar la venta (ruido, obras, industrias, historial del edificio)
+- Perfil del comprador potencial para el flipping
+
+PASO 3 - SCORING Y RANKING:
+Asigna un score del 1 al 10 a cada propiedad considerando:
+- 40% precio vs mercado
+- 25% potencial de revalorización
+- 20% factores cualitativos del entorno
+- 15% liquidez (facilidad de reventa)
+
+PASO 4 - OUTPUT:
+Responde EXACTAMENTE en este formato JSON y nada más:
+
+{{
+  "ciudad": "{location}",
+  "criterios": {{
+    "precioMin": "{precio_min} UF",
+    "precioMax": "{precio_max} UF",
+    "dormitorios": "{dorms}+",
+    "superficieMin": "{sup_min} m²"
+  }},
+  "promedioUFm2Zona": "XX.X",
+  "propiedades": [
+    {{
+      "ranking": 1,
+      "score": 8.5,
+      "titulo": "Departamento en ...",
+      "direccion": "Calle X, Comuna Y",
+      "precio_uf": 3200,
+      "superficie": 65,
+      "dormitorios": 2,
+      "ufm2": 49.2,
+      "ufm2_vs_zona": "-12% bajo mercado",
+      "dias_publicado": "estimado 90+ días",
+      "url": "https://...",
+      "analisis": {{
+        "precio_mercado": "análisis de 2-3 líneas",
+        "entorno_seguridad": "análisis de 2-3 líneas",
+        "conectividad": "análisis de 2-3 líneas",
+        "proyectos_zona": "análisis de 2-3 líneas",
+        "factores_ocultos": "análisis de 2-3 líneas",
+        "perfil_comprador": "análisis de 1-2 líneas"
+      }},
+      "recomendacion": "párrafo con recomendación clara de Proceder / Investigar más / Descartar",
+      "proximos_pasos": ["paso 1", "paso 2", "paso 3"],
+      "score_breakdown": {{
+        "precio_vs_mercado": 8,
+        "potencial_revalorizacion": 7,
+        "factores_cualitativos": 9,
+        "liquidez": 8
+      }}
+    }}
+  ],
+  "recomendacion_top": "párrafo explicando cuál es la mejor oportunidad y por qué",
+  "alertas_generales": ["alerta 1", "alerta 2"]
+}}"""
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model='claude-sonnet-4-20250514',
+            max_tokens=4000,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+
+        # Extract text from response
+        full_text = ''
+        for block in message.content:
+            if hasattr(block, 'text'):
+                full_text += block.text
+
+        # Parse JSON from response
+        import re
+        import json as json_lib
+        json_match = re.search(r'\{[\s\S]*\}', full_text)
+        if not json_match:
+            return jsonify({'error': 'No se pudo parsear la respuesta', 'raw': full_text}), 500
+
+        clean_json = json_match.group(0)
+        result = json_lib.loads(clean_json)
+
+        return jsonify({'success': True, 'data': result})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
