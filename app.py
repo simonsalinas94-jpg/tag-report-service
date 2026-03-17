@@ -402,6 +402,118 @@ def evento_agente():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/buscar-propiedades', methods=['POST'])
+def buscar_propiedades():
+    try:
+        import requests as req
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+
+        ciudad = data.get('ciudad', 'Santiago')
+        precio_max_uf = float(data.get('precioMax', 5000))
+        precio_min_uf = float(data.get('precioMin', 0))
+        sup_min = float(data.get('supMin', 0))
+        dorms = int(data.get('dorms', 0))
+
+        UF_VALUE = 38500  # CLP por UF aproximado
+
+        max_clp = int(precio_max_uf * UF_VALUE)
+        min_clp = int(precio_min_uf * UF_VALUE)
+
+        # City to state/city ID mapping for MLC (Chile)
+        city_params = {
+            'Santiago': 'state=TUxDUFJPVjhiYTJa',
+            'Viña del Mar': 'city=TUxDQ1ZJTjNlZGMx',
+            'Concón': 'city=TUxDQ0NPTjFlZGMx',
+            'Valparaíso': 'city=TUxDQ1ZBTDQ0NTQ1'
+        }
+
+        loc_param = city_params.get(ciudad, 'state=TUxDUFJPVjhiYTJa')
+
+        # MLC1459 = Departamentos en Chile
+        url = f"https://api.mercadolibre.com/sites/MLC/search?category=MLC1459&price={min_clp}-{max_clp}&{loc_param}&limit=50&sort=date_desc"
+
+        if dorms > 0:
+            url += f"&BEDROOMS={dorms}-"
+
+        headers = { 'User-Agent': 'Mozilla/5.0' }
+        response = req.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        meli_data = response.json()
+
+        results = meli_data.get('results', [])
+
+        # Process each property
+        props = []
+        for item in results:
+            price_clp = item.get('price', 0)
+            if not price_clp:
+                continue
+
+            price_uf = price_clp / UF_VALUE
+            superficie = 0
+            dormitorios = 0
+            bathrooms = 0
+
+            attrs = item.get('attributes', [])
+            for attr in attrs:
+                aid = attr.get('id', '')
+                val = attr.get('value_name', '') or ''
+                if aid in ('TOTAL_AREA', 'COVERED_AREA'):
+                    try:
+                        v = float(val.replace('m²','').replace(',','.').strip())
+                        if v > superficie:
+                            superficie = v
+                    except:
+                        pass
+                elif aid == 'BEDROOMS':
+                    try: dormitorios = int(val)
+                    except: pass
+                elif aid == 'BATHROOMS':
+                    try: bathrooms = int(val)
+                    except: pass
+
+            if sup_min > 0 and superficie > 0 and superficie < sup_min:
+                continue
+
+            ufm2 = price_uf / superficie if superficie > 0 else 0
+
+            # Days published
+            date_created = item.get('date_created', '')
+            dias = 0
+            if date_created:
+                try:
+                    from datetime import timezone
+                    created = datetime.fromisoformat(date_created.replace('Z', '+00:00'))
+                    now = datetime.now(timezone.utc)
+                    dias = (now - created).days
+                except:
+                    pass
+
+            address = item.get('address', {})
+            city_name = address.get('city_name', '') or address.get('state_name', '') or ciudad
+
+            props.append({
+                'id': item.get('id', ''),
+                'titulo': item.get('title', ''),
+                'precio': round(price_uf, 1),
+                'superficie': superficie,
+                'dormitorios': dormitorios,
+                'bathrooms': bathrooms,
+                'ufm2': round(ufm2, 2),
+                'diasPublicado': dias,
+                'ciudad': city_name,
+                'url': item.get('permalink', ''),
+                'thumbnail': item.get('thumbnail', '')
+            })
+
+        return jsonify({'success': True, 'results': props, 'total': len(props)})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
