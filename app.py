@@ -416,35 +416,46 @@ def buscar_propiedades():
         sup_min = float(data.get('supMin', 0))
         dorms = int(data.get('dorms', 0))
 
-        UF_VALUE = 38500  # CLP por UF aproximado
+        UF_VALUE = 38500
+
+        # Get Meli credentials
+        app_id = os.environ.get('MELI_APP_ID')
+        secret_key = os.environ.get('MELI_SECRET_KEY')
+        if not app_id or not secret_key:
+            return jsonify({'error': 'Credenciales de Mercado Libre no configuradas'}), 500
+
+        # Get access token
+        token_resp = req.post(
+            'https://api.mercadolibre.com/oauth/token',
+            headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            data={'grant_type': 'client_credentials', 'client_id': app_id, 'client_secret': secret_key},
+            timeout=10
+        )
+        token_resp.raise_for_status()
+        access_token = token_resp.json().get('access_token')
+        if not access_token:
+            return jsonify({'error': 'No se pudo obtener token de Mercado Libre'}), 500
 
         max_clp = int(precio_max_uf * UF_VALUE)
         min_clp = int(precio_min_uf * UF_VALUE)
 
-        # City to state/city ID mapping for MLC (Chile)
         city_params = {
-            'Santiago': 'state=TUxDUFJPVjhiYTJa',
-            'Viña del Mar': 'city=TUxDQ1ZJTjNlZGMx',
-            'Concón': 'city=TUxDQ0NPTjFlZGMx',
-            'Valparaíso': 'city=TUxDQ1ZBTDQ0NTQ1'
+            'Santiago':    'state=TUxDUFJPVjhiYTJa',
+            'Viña del Mar':'city=TUxDQ1ZJTjNlZGMx',
+            'Concón':      'city=TUxDQ0NPTjFlZGMx',
+            'Valparaíso':  'city=TUxDQ1ZBTDQ0NTQ1'
         }
-
         loc_param = city_params.get(ciudad, 'state=TUxDUFJPVjhiYTJa')
 
-        # MLC1459 = Departamentos en Chile
         url = f"https://api.mercadolibre.com/sites/MLC/search?category=MLC1459&price={min_clp}-{max_clp}&{loc_param}&limit=50&sort=date_desc"
-
         if dorms > 0:
             url += f"&BEDROOMS={dorms}-"
 
-        headers = { 'User-Agent': 'Mozilla/5.0' }
-        response = req.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        meli_data = response.json()
+        headers = {'Authorization': f'Bearer {access_token}', 'User-Agent': 'Mozilla/5.0'}
+        search_resp = req.get(url, headers=headers, timeout=15)
+        search_resp.raise_for_status()
+        results = search_resp.json().get('results', [])
 
-        results = meli_data.get('results', [])
-
-        # Process each property
         props = []
         for item in results:
             price_clp = item.get('price', 0)
@@ -456,17 +467,14 @@ def buscar_propiedades():
             dormitorios = 0
             bathrooms = 0
 
-            attrs = item.get('attributes', [])
-            for attr in attrs:
+            for attr in item.get('attributes', []):
                 aid = attr.get('id', '')
                 val = attr.get('value_name', '') or ''
                 if aid in ('TOTAL_AREA', 'COVERED_AREA'):
                     try:
                         v = float(val.replace('m²','').replace(',','.').strip())
-                        if v > superficie:
-                            superficie = v
-                    except:
-                        pass
+                        if v > superficie: superficie = v
+                    except: pass
                 elif aid == 'BEDROOMS':
                     try: dormitorios = int(val)
                     except: pass
@@ -477,19 +485,16 @@ def buscar_propiedades():
             if sup_min > 0 and superficie > 0 and superficie < sup_min:
                 continue
 
-            ufm2 = price_uf / superficie if superficie > 0 else 0
+            ufm2 = round(price_uf / superficie, 2) if superficie > 0 else 0
 
-            # Days published
-            date_created = item.get('date_created', '')
             dias = 0
+            date_created = item.get('date_created', '')
             if date_created:
                 try:
                     from datetime import timezone
                     created = datetime.fromisoformat(date_created.replace('Z', '+00:00'))
-                    now = datetime.now(timezone.utc)
-                    dias = (now - created).days
-                except:
-                    pass
+                    dias = (datetime.now(timezone.utc) - created).days
+                except: pass
 
             address = item.get('address', {})
             city_name = address.get('city_name', '') or address.get('state_name', '') or ciudad
@@ -501,7 +506,7 @@ def buscar_propiedades():
                 'superficie': superficie,
                 'dormitorios': dormitorios,
                 'bathrooms': bathrooms,
-                'ufm2': round(ufm2, 2),
+                'ufm2': ufm2,
                 'diasPublicado': dias,
                 'ciudad': city_name,
                 'url': item.get('permalink', ''),
