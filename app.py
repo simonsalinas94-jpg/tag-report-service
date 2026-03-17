@@ -545,61 +545,26 @@ def buscar_oportunidades():
 
         location = f'{comuna}, {ciudad}' if comuna else ciudad
 
-        prompt = f"""Eres un experto en inversión inmobiliaria en Chile para BTS Investments, especializado en identificar oportunidades de flipping de departamentos.
+        prompt = f"""Eres un experto en inversión inmobiliaria en Chile para BTS Investments.
 
-Tu tarea es buscar y analizar las 5 mejores oportunidades de departamentos en venta en {location} con estos criterios:
+Busca en Portal Inmobiliario Chile (portalinmobiliario.com), Toctoc.com y Mercado Libre inmuebles Chile los 3 departamentos en venta más interesantes como oportunidades de flipping en {location} con estos criterios:
 - Precio: {precio_min} a {precio_max} UF
 - Dormitorios mínimo: {dorms}
 - Superficie mínima: {sup_min} m²
-- Foco: oportunidades de flipping (precio bajo mercado, tiempo publicado, potencial de revalorización)
 
-PASO 1 - BÚSQUEDA:
-Busca en Portal Inmobiliario Chile, Toctoc.com y Mercado Libre inmuebles Chile departamentos que cumplan estos criterios. Identifica las 5 propiedades más interesantes como oportunidades de flipping, priorizando:
-- Precio por m² bajo el promedio de la zona
-- Tiempo prolongado en el mercado (señal de negociación)
-- Ubicaciones con potencial de revalorización
+Prioriza propiedades con:
+1. Precio por m² bajo el promedio de la zona
+2. Tiempo prolongado en el mercado
 
-PASO 2 - ANÁLISIS HOLÍSTICO DE CADA PROPIEDAD:
-Para cada una de las 5 propiedades, analiza:
-
-DATOS DUROS:
-- Dirección y comuna exacta
-- Precio en UF y UF/m²
-- Comparación UF/m² vs promedio de la zona
-- Superficie y dormitorios
-- Tiempo estimado en el mercado
-- URL del aviso si está disponible
-
-ANÁLISIS CUALITATIVO:
-- Entorno y seguridad del sector
-- Conectividad y transporte (metro, buses, autopistas)
-- Proyectos nuevos en la zona (competencia o señal de crecimiento)
-- Factores ocultos que podrían afectar la venta (ruido, obras, industrias, historial del edificio)
-- Perfil del comprador potencial para el flipping
-
-PASO 3 - SCORING Y RANKING:
-Asigna un score del 1 al 10 a cada propiedad considerando:
-- 40% precio vs mercado
-- 25% potencial de revalorización
-- 20% factores cualitativos del entorno
-- 15% liquidez (facilidad de reventa)
-
-PASO 4 - OUTPUT:
-Responde EXACTAMENTE en este formato JSON y nada más:
+Para cada propiedad entrega un análisis conciso. Responde SOLO con este JSON sin texto adicional:
 
 {{
   "ciudad": "{location}",
-  "criterios": {{
-    "precioMin": "{precio_min} UF",
-    "precioMax": "{precio_max} UF",
-    "dormitorios": "{dorms}+",
-    "superficieMin": "{sup_min} m²"
-  }},
   "promedioUFm2Zona": "XX.X",
   "propiedades": [
     {{
       "ranking": 1,
-      "score": 8.5,
+      "score": 8.0,
       "titulo": "Departamento en ...",
       "direccion": "Calle X, Comuna Y",
       "precio_uf": 3200,
@@ -610,26 +575,51 @@ Responde EXACTAMENTE en este formato JSON y nada más:
       "dias_publicado": "estimado 90+ días",
       "url": "https://...",
       "analisis": {{
-        "precio_mercado": "análisis de 2-3 líneas",
-        "entorno_seguridad": "análisis de 2-3 líneas",
-        "conectividad": "análisis de 2-3 líneas",
-        "proyectos_zona": "análisis de 2-3 líneas",
-        "factores_ocultos": "análisis de 2-3 líneas",
-        "perfil_comprador": "análisis de 1-2 líneas"
+        "precio_mercado": "2 líneas de análisis",
+        "entorno_seguridad": "2 líneas de análisis",
+        "conectividad": "2 líneas de análisis",
+        "proyectos_zona": "2 líneas de análisis",
+        "factores_ocultos": "2 líneas de análisis",
+        "perfil_comprador": "1 línea"
       }},
-      "recomendacion": "párrafo con recomendación clara de Proceder / Investigar más / Descartar",
+      "recomendacion": "Proceder / Investigar más / Descartar con justificación en 2 líneas",
       "proximos_pasos": ["paso 1", "paso 2", "paso 3"],
       "score_breakdown": {{
         "precio_vs_mercado": 8,
         "potencial_revalorizacion": 7,
-        "factores_cualitativos": 9,
-        "liquidez": 8
+        "factores_cualitativos": 8,
+        "liquidez": 7
       }}
     }}
   ],
-  "recomendacion_top": "párrafo explicando cuál es la mejor oportunidad y por qué",
+  "recomendacion_top": "2 líneas sobre la mejor oportunidad",
   "alertas_generales": ["alerta 1", "alerta 2"]
 }}"""
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model='claude-sonnet-4-20250514',
+            max_tokens=3000,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+
+        full_text = ''
+        for block in message.content:
+            if hasattr(block, 'text'):
+                full_text += block.text
+
+        import re
+        import json as json_lib
+        json_match = re.search(r'\{[\s\S]*\}', full_text)
+        if not json_match:
+            return jsonify({'error': 'No se pudo parsear la respuesta', 'raw': full_text[:500]}), 500
+
+        result = json_lib.loads(json_match.group(0))
+        return jsonify({'success': True, 'data': result})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500"""
 
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
