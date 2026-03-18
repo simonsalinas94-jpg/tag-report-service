@@ -826,6 +826,108 @@ Genera la receta completa y detallada. Responde SOLO con este JSON:
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/menu-semanal', methods=['POST'])
+def menu_semanal():
+    try:
+        import anthropic
+        import json as json_lib
+
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'API key no configurada'}), 500
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+
+        modo = data.get('modo', 'ingredientes')
+        ingredientes = data.get('ingredientes', '')
+        dias = data.get('dias', ['Lunes','Martes','Miércoles','Jueves','Viernes'])
+        comidas = data.get('comidas', ['Almuerzo','Cena'])
+        comensales = int(data.get('comensales', 2))
+        restriccion = data.get('restriccion', '')
+
+        dias_str = ', '.join(dias)
+        comidas_str = ', '.join(comidas)
+        restriccion_str = restriccion or 'ninguna'
+
+        if modo == 'ingredientes':
+            contexto = f"El usuario tiene estos ingredientes disponibles: {ingredientes}. Planifica usando principalmente estos ingredientes."
+        else:
+            contexto = "El usuario no tiene ingredientes definidos. Sugiere recetas variadas y saludables, y genera una lista de compras completa."
+
+        prompt = f"""Eres un chef y nutricionista experto en planificación de menús semanales.
+
+{contexto}
+
+PARÁMETROS:
+- Días a planificar: {dias_str}
+- Comidas por día: {comidas_str}
+- Comensales: {comensales} persona(s)
+- Restricciones: {restriccion_str}
+
+Genera un menú semanal variado, saludable, simple y rico. Evita repetir la misma receta.
+
+Responde SOLO con este JSON sin texto adicional:
+
+{{
+  "plan": [
+    {{
+      "dia": "Lunes",
+      "comidas": [
+        {{
+          "tipo": "Almuerzo",
+          "nombre": "Nombre del plato",
+          "descripcion": "Descripción breve",
+          "calorias": 450,
+          "proteina_g": 35,
+          "carbohidratos_g": 40,
+          "grasas_g": 12
+        }}
+      ]
+    }}
+  ],
+  "lista_compras": {{
+    "Proteínas": [
+      {{"nombre": "Pechuga de pollo", "cantidad": "1.5 kg"}},
+      {{"nombre": "Huevos", "cantidad": "12 unidades"}}
+    ],
+    "Verduras y frutas": [
+      {{"nombre": "Tomates", "cantidad": "6 unidades"}}
+    ],
+    "Granos y cereales": [
+      {{"nombre": "Arroz integral", "cantidad": "500 g"}}
+    ],
+    "Lácteos": [
+      {{"nombre": "Yogur griego", "cantidad": "500 g"}}
+    ],
+    "Otros": [
+      {{"nombre": "Aceite de oliva", "cantidad": "1 botella"}}
+    ]
+  }},
+  "tip_semana": "Un consejo nutricional relevante para esta semana."
+}}"""
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model='claude-sonnet-4-20250514',
+            max_tokens=3000,
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+
+        full_text = message.content[0].text
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', full_text)
+        if not json_match:
+            return jsonify({'error': 'No se pudo procesar la respuesta'}), 500
+
+        result = json_lib.loads(json_match.group(0))
+        return jsonify({'success': True, 'data': result})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
