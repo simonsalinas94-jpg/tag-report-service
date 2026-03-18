@@ -854,21 +854,17 @@ def menu_semanal():
         if modo == 'ingredientes':
             contexto = f"El usuario tiene estos ingredientes: {ingredientes}. Planifica usando principalmente estos ingredientes."
         else:
-            contexto = "El usuario no tiene ingredientes definidos. Sugiere recetas variadas y saludables, y genera lista de compras completa."
+            contexto = "Sugiere recetas variadas y saludables. Genera lista de compras completa."
 
-        prompt = f"""Eres un chef y nutricionista experto en planificación de menús semanales.
+        prompt = f"""Eres un chef y nutricionista experto.
 
 {contexto}
 
-PARÁMETROS:
-- Días: {dias_str}
-- Comidas por día: {comidas_str}
-- Comensales: {comensales} persona(s)
-- Restricciones: {restriccion_str}
+Días: {dias_str} | Comidas: {comidas_str} | Comensales: {comensales} | Restricciones: {restriccion_str}
 
-Genera un menú semanal variado, saludable y simple. Incluye la receta completa de cada plato.
+Genera un menú semanal variado y saludable. Solo nombres y macros, sin recetas detalladas.
 
-Responde SOLO con este JSON sin texto adicional:
+Responde SOLO con este JSON:
 
 {{
   "plan": [
@@ -878,89 +874,50 @@ Responde SOLO con este JSON sin texto adicional:
         {{
           "tipo": "Almuerzo",
           "nombre": "Pollo al limón con arroz",
-          "descripcion": "Descripción breve apetitosa",
+          "descripcion": "Pollo jugoso con arroz integral y vegetales salteados",
           "emoji": "🍋",
           "calorias": 450,
           "proteina_g": 35,
           "carbohidratos_g": 40,
           "grasas_g": 12,
           "tiempo_preparacion": "25 min",
-          "dificultad": "Fácil",
-          "ingredientes": [
-            {{"nombre": "Pechuga de pollo", "cantidad": "200", "unidad": "g"}},
-            {{"nombre": "Arroz", "cantidad": "80", "unidad": "g"}}
-          ],
-          "pasos": [
-            {{"numero": 1, "titulo": "Preparar el pollo", "descripcion": "Sazonar el pollo con sal, pimienta y jugo de limón.", "tiempo": "5 min"}},
-            {{"numero": 2, "titulo": "Cocinar", "descripcion": "Cocinar en sartén a fuego medio por 8 minutos por lado.", "tiempo": "16 min"}}
-          ],
-          "macros_por_porcion": {{
-            "calorias": 450,
-            "proteina_g": 35,
-            "carbohidratos_g": 40,
-            "grasas_g": 12,
-            "fibra_g": 3
-          }},
-          "consejos": ["Marinar el pollo 30 minutos antes para más sabor."],
-          "conservacion": "Conservar hasta 3 días en refrigerador."
+          "dificultad": "Fácil"
         }}
       ]
     }}
   ],
   "lista_compras": {{
-    "Proteínas": [
-      {{"nombre": "Pechuga de pollo", "cantidad": "1.5 kg"}}
-    ],
-    "Verduras y frutas": [
-      {{"nombre": "Tomates", "cantidad": "6 unidades"}}
-    ],
-    "Granos y cereales": [
-      {{"nombre": "Arroz integral", "cantidad": "500 g"}}
-    ],
+    "Proteínas": [{{"nombre": "Pechuga de pollo", "cantidad": "1.5 kg"}}],
+    "Verduras y frutas": [{{"nombre": "Tomates", "cantidad": "6 unidades"}}],
+    "Granos y cereales": [{{"nombre": "Arroz integral", "cantidad": "500 g"}}],
     "Lácteos": [],
-    "Otros": [
-      {{"nombre": "Aceite de oliva", "cantidad": "1 botella"}}
-    ]
+    "Otros": [{{"nombre": "Aceite de oliva", "cantidad": "1 botella"}}]
   }},
-  "tip_semana": "Un consejo nutricional relevante para esta semana."
+  "tip_semana": "Consejo nutricional breve."
 }}"""
 
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model='claude-sonnet-4-20250514',
-            max_tokens=6000,
+            max_tokens=2500,
             messages=[{'role': 'user', 'content': prompt}]
         )
 
         full_text = message.content[0].text
         import re
-
         json_match = re.search(r'\{[\s\S]*\}', full_text)
         if not json_match:
             return jsonify({'error': 'No se pudo procesar la respuesta'}), 500
 
         raw_json = json_match.group(0)
-
-        # Try direct parse first
         try:
             result = json_lib.loads(raw_json)
         except json_lib.JSONDecodeError:
             try:
-                # Remove trailing commas before } or ]
                 cleaned = re.sub(r',\s*([}\]])', r'\1', raw_json)
                 result = json_lib.loads(cleaned)
             except json_lib.JSONDecodeError as je:
-                # Truncate at last valid closing brace
-                try:
-                    last_brace = raw_json.rfind('"tip_semana"')
-                    if last_brace > 0:
-                        partial = raw_json[:last_brace] + '"tip_semana": "Ver recetas para más detalles nutritivos."}}'
-                        cleaned = re.sub(r',\s*([}\]])', r'\1', partial)
-                        result = json_lib.loads(cleaned)
-                    else:
-                        return jsonify({'error': f'JSON inválido: {str(je)}'}), 500
-                except Exception as e2:
-                    return jsonify({'error': f'Error parseando respuesta: {str(e2)}'}), 500
+                return jsonify({'error': f'Error parseando respuesta: {str(je)}'}), 500
 
         return jsonify({'success': True, 'data': result})
 
