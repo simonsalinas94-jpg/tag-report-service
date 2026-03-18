@@ -934,11 +934,34 @@ Responde SOLO con este JSON sin texto adicional:
 
         full_text = message.content[0].text
         import re
+
         json_match = re.search(r'\{[\s\S]*\}', full_text)
         if not json_match:
             return jsonify({'error': 'No se pudo procesar la respuesta'}), 500
 
-        result = json_lib.loads(json_match.group(0))
+        raw_json = json_match.group(0)
+
+        # Try direct parse first
+        try:
+            result = json_lib.loads(raw_json)
+        except json_lib.JSONDecodeError:
+            try:
+                # Remove trailing commas before } or ]
+                cleaned = re.sub(r',\s*([}\]])', r'\1', raw_json)
+                result = json_lib.loads(cleaned)
+            except json_lib.JSONDecodeError as je:
+                # Truncate at last valid closing brace
+                try:
+                    last_brace = raw_json.rfind('"tip_semana"')
+                    if last_brace > 0:
+                        partial = raw_json[:last_brace] + '"tip_semana": "Ver recetas para más detalles nutritivos."}}'
+                        cleaned = re.sub(r',\s*([}\]])', r'\1', partial)
+                        result = json_lib.loads(cleaned)
+                    else:
+                        return jsonify({'error': f'JSON inválido: {str(je)}'}), 500
+                except Exception as e2:
+                    return jsonify({'error': f'Error parseando respuesta: {str(e2)}'}), 500
+
         return jsonify({'success': True, 'data': result})
 
     except Exception as e:
