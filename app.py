@@ -852,21 +852,21 @@ def menu_semanal():
         restriccion_str = restriccion or 'ninguna'
 
         if modo == 'ingredientes':
-            contexto = f"El usuario tiene estos ingredientes disponibles: {ingredientes}. Planifica usando principalmente estos ingredientes."
+            contexto = f"El usuario tiene estos ingredientes: {ingredientes}. Planifica usando principalmente estos ingredientes."
         else:
-            contexto = "El usuario no tiene ingredientes definidos. Sugiere recetas variadas y saludables, y genera una lista de compras completa."
+            contexto = "El usuario no tiene ingredientes definidos. Sugiere recetas variadas y saludables, y genera lista de compras completa."
 
         prompt = f"""Eres un chef y nutricionista experto en planificación de menús semanales.
 
 {contexto}
 
 PARÁMETROS:
-- Días a planificar: {dias_str}
+- Días: {dias_str}
 - Comidas por día: {comidas_str}
 - Comensales: {comensales} persona(s)
 - Restricciones: {restriccion_str}
 
-Genera un menú semanal variado, saludable, simple y rico. Evita repetir la misma receta.
+Genera un menú semanal variado, saludable y simple. Incluye la receta completa de cada plato.
 
 Responde SOLO con este JSON sin texto adicional:
 
@@ -877,20 +877,39 @@ Responde SOLO con este JSON sin texto adicional:
       "comidas": [
         {{
           "tipo": "Almuerzo",
-          "nombre": "Nombre del plato",
-          "descripcion": "Descripción breve",
+          "nombre": "Pollo al limón con arroz",
+          "descripcion": "Descripción breve apetitosa",
+          "emoji": "🍋",
           "calorias": 450,
           "proteina_g": 35,
           "carbohidratos_g": 40,
-          "grasas_g": 12
+          "grasas_g": 12,
+          "tiempo_preparacion": "25 min",
+          "dificultad": "Fácil",
+          "ingredientes": [
+            {{"nombre": "Pechuga de pollo", "cantidad": "200", "unidad": "g"}},
+            {{"nombre": "Arroz", "cantidad": "80", "unidad": "g"}}
+          ],
+          "pasos": [
+            {{"numero": 1, "titulo": "Preparar el pollo", "descripcion": "Sazonar el pollo con sal, pimienta y jugo de limón.", "tiempo": "5 min"}},
+            {{"numero": 2, "titulo": "Cocinar", "descripcion": "Cocinar en sartén a fuego medio por 8 minutos por lado.", "tiempo": "16 min"}}
+          ],
+          "macros_por_porcion": {{
+            "calorias": 450,
+            "proteina_g": 35,
+            "carbohidratos_g": 40,
+            "grasas_g": 12,
+            "fibra_g": 3
+          }},
+          "consejos": ["Marinar el pollo 30 minutos antes para más sabor."],
+          "conservacion": "Conservar hasta 3 días en refrigerador."
         }}
       ]
     }}
   ],
   "lista_compras": {{
     "Proteínas": [
-      {{"nombre": "Pechuga de pollo", "cantidad": "1.5 kg"}},
-      {{"nombre": "Huevos", "cantidad": "12 unidades"}}
+      {{"nombre": "Pechuga de pollo", "cantidad": "1.5 kg"}}
     ],
     "Verduras y frutas": [
       {{"nombre": "Tomates", "cantidad": "6 unidades"}}
@@ -898,9 +917,7 @@ Responde SOLO con este JSON sin texto adicional:
     "Granos y cereales": [
       {{"nombre": "Arroz integral", "cantidad": "500 g"}}
     ],
-    "Lácteos": [
-      {{"nombre": "Yogur griego", "cantidad": "500 g"}}
-    ],
+    "Lácteos": [],
     "Otros": [
       {{"nombre": "Aceite de oliva", "cantidad": "1 botella"}}
     ]
@@ -911,7 +928,7 @@ Responde SOLO con este JSON sin texto adicional:
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model='claude-sonnet-4-20250514',
-            max_tokens=3000,
+            max_tokens=6000,
             messages=[{'role': 'user', 'content': prompt}]
         )
 
