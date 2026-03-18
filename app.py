@@ -622,6 +622,210 @@ Para cada propiedad entrega un análisis conciso. Responde SOLO con este JSON si
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/recetas', methods=['POST'])
+def recetas():
+    try:
+        import anthropic
+        import json as json_lib
+
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'API key no configurada'}), 500
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+
+        ingredientes_texto = data.get('ingredientes', '')
+        imagen_base64 = data.get('imagen_base64', '')
+        imagen_tipo = data.get('imagen_tipo', 'image/jpeg')
+        comida = data.get('comida', 'cualquier comida')
+        comensales = int(data.get('comensales', 1))
+        meal_prep = data.get('meal_prep', False)
+        restricciones = data.get('restricciones', [])
+
+        restricciones_str = ', '.join(restricciones) if restricciones else 'ninguna'
+        porciones_str = f"{comensales} persona{'s' if comensales > 1 else ''}"
+        if meal_prep:
+            porciones_str += " + meal prep para el día siguiente"
+
+        prompt = f"""Eres un chef y nutricionista experto. El usuario quiere cocinar {comida}.
+
+RESTRICCIONES ALIMENTARIAS: {restricciones_str}
+PORCIONES: {porciones_str}
+
+{"El usuario tiene estos ingredientes disponibles: " + ingredientes_texto if ingredientes_texto else "Analiza la imagen para identificar los ingredientes disponibles."}
+
+Tu tarea:
+1. Identifica los ingredientes disponibles
+2. Propón 3 recetas posibles, simples y saludables
+3. El usuario elegirá una — por ahora presenta las 3 opciones
+
+Responde SOLO con este JSON sin texto adicional:
+
+{{
+  "ingredientes_detectados": ["ingrediente 1", "ingrediente 2"],
+  "recetas": [
+    {{
+      "id": 1,
+      "nombre": "Nombre de la receta",
+      "descripcion": "1-2 líneas atractivas",
+      "tiempo_preparacion": "20 min",
+      "dificultad": "Fácil",
+      "calorias_por_porcion": 450,
+      "proteina_g": 35,
+      "carbohidratos_g": 40,
+      "grasas_g": 12,
+      "emoji": "🍳"
+    }},
+    {{
+      "id": 2,
+      "nombre": "Nombre de la receta",
+      "descripcion": "1-2 líneas atractivas",
+      "tiempo_preparacion": "15 min",
+      "dificultad": "Muy fácil",
+      "calorias_por_porcion": 380,
+      "proteina_g": 28,
+      "carbohidratos_g": 35,
+      "grasas_g": 10,
+      "emoji": "🥗"
+    }},
+    {{
+      "id": 3,
+      "nombre": "Nombre de la receta",
+      "descripcion": "1-2 líneas atractivas",
+      "tiempo_preparacion": "30 min",
+      "dificultad": "Media",
+      "calorias_por_porcion": 520,
+      "proteina_g": 40,
+      "carbohidratos_g": 45,
+      "grasas_g": 15,
+      "emoji": "🍲"
+    }}
+  ]
+}}"""
+
+        # Build message content
+        if imagen_base64:
+            content = [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": imagen_tipo,
+                        "data": imagen_base64
+                    }
+                },
+                {"type": "text", "text": prompt}
+            ]
+        else:
+            content = prompt
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model='claude-sonnet-4-20250514',
+            max_tokens=1500,
+            messages=[{'role': 'user', 'content': content}]
+        )
+
+        full_text = message.content[0].text
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', full_text)
+        if not json_match:
+            return jsonify({'error': 'No se pudo procesar la respuesta'}), 500
+
+        result = json_lib.loads(json_match.group(0))
+        return jsonify({'success': True, 'data': result})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/receta-detalle', methods=['POST'])
+def receta_detalle():
+    try:
+        import anthropic
+        import json as json_lib
+
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'API key no configurada'}), 500
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No se recibieron datos'}), 400
+
+        receta_nombre = data.get('receta_nombre', '')
+        ingredientes = data.get('ingredientes_detectados', [])
+        comensales = int(data.get('comensales', 1))
+        meal_prep = data.get('meal_prep', False)
+        restricciones = data.get('restricciones', [])
+
+        restricciones_str = ', '.join(restricciones) if restricciones else 'ninguna'
+        porciones = comensales * 2 if meal_prep else comensales
+        porciones_str = f"{porciones} porciones"
+        if meal_prep:
+            porciones_str += f" ({comensales} para ahora + {comensales} meal prep)"
+
+        prompt = f"""Eres un chef y nutricionista experto.
+
+El usuario eligió hacer: {receta_nombre}
+Ingredientes disponibles: {', '.join(ingredientes)}
+Porciones a preparar: {porciones_str}
+Restricciones: {restricciones_str}
+
+Genera la receta completa y detallada. Responde SOLO con este JSON:
+
+{{
+  "nombre": "{receta_nombre}",
+  "porciones": {porciones},
+  "tiempo_total": "25 min",
+  "dificultad": "Fácil",
+  "ingredientes": [
+    {{"nombre": "Pechuga de pollo", "cantidad": "400", "unidad": "g"}},
+    {{"nombre": "Aceite de oliva", "cantidad": "2", "unidad": "cucharadas"}}
+  ],
+  "pasos": [
+    {{"numero": 1, "titulo": "Preparar los ingredientes", "descripcion": "Descripción clara del paso en 1-2 líneas.", "tiempo": "5 min"}},
+    {{"numero": 2, "titulo": "Cocinar", "descripcion": "Descripción clara del paso.", "tiempo": "15 min"}}
+  ],
+  "macros_por_porcion": {{
+    "calorias": 450,
+    "proteina_g": 35,
+    "carbohidratos_g": 40,
+    "grasas_g": 12,
+    "fibra_g": 5
+  }},
+  "macros_totales": {{
+    "calorias": 900,
+    "proteina_g": 70,
+    "carbohidratos_g": 80,
+    "grasas_g": 24
+  }},
+  "consejos": ["consejo 1", "consejo 2"],
+  "conservacion": "Se conserva hasta 3 días en el refrigerador en recipiente hermético."
+}}"""
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model='claude-sonnet-4-20250514',
+            max_tokens=2000,
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+
+        full_text = message.content[0].text
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', full_text)
+        if not json_match:
+            return jsonify({'error': 'No se pudo procesar la respuesta'}), 500
+
+        result = json_lib.loads(json_match.group(0))
+        return jsonify({'success': True, 'data': result})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
